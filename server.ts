@@ -8,7 +8,8 @@ import { GradeEssayResponse } from './src/types';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+// Dynamic port binding required for cloud environments like Render
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // JSON request parsing with limit for essays
 app.use(express.json({ limit: '10mb' }));
@@ -23,17 +24,20 @@ const ai = new GoogleGenAI({
   },
 });
 
-// Help Endpoint
-app.get('/api/health', (req, res) => {
+// Health Endpoint
+app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
 // Helper to safely parse JSON content that might be enclosed in markdown code blocks
+// Built with dynamic string construction to protect the markdown parser from cutoffs
 function safeParseJson(text: string): any {
   let cleaned = text.trim();
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n/, '');
-    cleaned = cleaned.replace(/\n```$/, '');
+  const backticksSymbol = '`'.repeat(3);
+  
+  if (cleaned.startsWith(backticksSymbol)) {
+    cleaned = cleaned.replace(new RegExp('^' + backticksSymbol + '(?:json)?\\n'), '');
+    cleaned = cleaned.replace(new RegExp('\\n' + backticksSymbol + '$'), '');
   }
   cleaned = cleaned.trim();
   
@@ -52,7 +56,7 @@ function safeParseJson(text: string): any {
 }
 
 // Endpoint: Dynamic current affairs banking quiz generation using Google Search Grounding for live 2026 data
-app.post('/api/generate-news-quiz', async (req, res) => {
+app.post('/api/generate-news-quiz', async (req: Request, res: Response) => {
   try {
     const defaultQuery = "Latest Indian economy, finance, policy updates, and banking sector news May and June 2026";
     const prompt = `Search Google for the latest Indian banking, financial sector reforms, and economy news from May and June 2026. 
@@ -71,21 +75,17 @@ app.post('/api/generate-news-quiz', async (req, res) => {
     ]
     Return ONLY this raw JSON array inside json code block or as bare text.`;
 
-    let response;
+    let response: any;
     let fallbackToNonSearch = false;
     let fallbackReason = '';
 
-    // NOTE: The modern @google/genai SDK automatically manages translating the 
-    // googleSearch tool configuration into actual requests, securing the call 
-    // using process.env.GEMINI_API_KEY. No manual fetch requests or external search 
-    // engine keys are needed. We log grounding failures clearly to help with diagnostics.
     try {
       response = await ai.models.generateContent({
         model: 'gemini-3.5-flash',
         contents: prompt,
         config: {
           tools: [{ googleSearch: {} }]
-        }
+        } as any
       });
     } catch (searchError: any) {
       console.error('[GROUNDING DEBUG] Google Search Grounding failed during General Awareness quiz generation.');
@@ -107,7 +107,6 @@ app.post('/api/generate-news-quiz', async (req, res) => {
         });
       } catch (fallbackError: any) {
         console.error('[GROUNDING DEBUG] Generative fallback failed too:', fallbackError);
-        // Fail over to internal standard BankersVault QA dataset to guarantee continuous training
         const offlineQuiz = FALLBACK_QUIZ.filter(q => q.subject === 'General Awareness');
         return res.json({ 
           questions: offlineQuiz.length > 0 ? offlineQuiz : FALLBACK_QUIZ.slice(0, 5), 
@@ -122,7 +121,6 @@ app.post('/api/generate-news-quiz', async (req, res) => {
     const quizText = response.text || "[]";
     const parsedQuiz = safeParseJson(quizText);
 
-    // Extract grounding URLs so the frontend can offer real source links
     let sourceLinks = [];
     if (!fallbackToNonSearch) {
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
@@ -140,7 +138,6 @@ app.post('/api/generate-news-quiz', async (req, res) => {
     res.json({ questions: parsedQuiz, sources: sourceLinks });
   } catch (error: any) {
     console.error('GA Quiz Generation Global Catch:', error);
-    // Absolute worst case fallback - return subset of the local static quiz questions
     const finalFallback = FALLBACK_QUIZ.filter(q => q.subject === 'General Awareness');
     res.json({ 
       questions: finalFallback.length > 0 ? finalFallback : FALLBACK_QUIZ.slice(0, 5), 
@@ -233,7 +230,7 @@ const FALLBACK_QUIZ = [
 ];
 
 // Endpoint: Dynamic AI Generator of bank exam PO mock tests
-app.post('/api/generate-mock-quiz', async (req, res) => {
+app.post('/api/generate-mock-quiz', async (req: Request, res: Response) => {
   try {
     const prompt = `Generate exactly 10 challenging, randomized bank PO exam level questions following the comprehensive IBPS PO syllabus.
     Ensure that on every generation you randomize the numbers, names, and patterns so that they are physically unique and fresh.
@@ -255,7 +252,7 @@ app.post('/api/generate-mock-quiz', async (req, res) => {
     Every single question MUST have a subject matching exactly one of these four strings: 'Quantitative Aptitude', 'Reasoning Ability', 'English Language', or 'General Awareness'.
     Make sure the mathematical and logical solutions are correct and robust. Ensure each option list has exactly 4 distinct possibilities. Use clear, educational step-by-step reasoning in the explanations.`;
 
-    const response = await ai.models.generateContent({
+    const response: any = await ai.models.generateContent({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -282,7 +279,7 @@ app.post('/api/generate-mock-quiz', async (req, res) => {
             required: ["id", "question", "options", "correctAnswerIndex", "subject", "explanation"]
           }
         }
-      }
+      } as any
     });
 
     const text = response.text || "[]";
@@ -314,7 +311,7 @@ app.post('/api/grade-essay', async (req: Request, res: Response) => {
 
   try {
     // Topic Relevance and Nonsense Filter
-    const relevanceCheck = await ai.models.generateContent({
+    const relevanceCheck: any = await ai.models.generateContent({
       model: 'gemini-3.5-flash',
       contents: `You are an expert IBPS PO Examiner. Analyze the following essay submission for syllabus relevance and text validity.
 Target Topics Allowed: Banking, Insurance, Finance, Economics, Indian Economy, Social-Economic Issues, Government Policy/Schemes, or National Current Affairs.
@@ -342,7 +339,7 @@ Return a JSON object:
           },
           required: ["is_relevant", "flagged_as_filler", "reason"]
         }
-      }
+      } as any
     });
 
     const relevanceData = safeParseJson(relevanceCheck.text || "{}");
@@ -384,11 +381,10 @@ Return a JSON object:
 
     You must output a highly detailed performance evaluation formatted strictly as JSON matching the schema. The review markdown should be structured professionally.`;
 
-    const response = await ai.models.generateContent({
+    const response: any = await ai.models.generateContent({
       model: 'gemini-3.5-flash',
       contents: evaluationPrompt,
       config: {
-        // High thinking is enabled via reasoning guidelines and detailed evaluation constraints
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -402,7 +398,7 @@ Return a JSON object:
           },
           required: ["wordCount", "grammarScore", "structureScore", "contentScore", "overallScore", "detailedReview"]
         }
-      }
+      } as any
     });
 
     const resultData = safeParseJson(response.text || "{}");
@@ -475,7 +471,6 @@ Return a JSON object:
         }
       } catch (docErr: any) {
         console.error('Google Docs Export Failure:', docErr);
-        // Do not fail the whole request; return evaluation results but with doc export error
         googleDocInfo = { error: 'Failed to write report to Google Docs: ' + docErr.message };
       }
     }
@@ -525,18 +520,31 @@ We encountered a transient network connection or parsing constraint with the AI 
   }
 });
 
-// Configure Vite middleware in development or direct static assets serving in production
+// Configure Vite middleware in development or direct static asset serving in production
 async function setupServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  // Render automatically assigns process.env.RENDER as 'true' on deployment
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+
+  if (!isProduction) {
+    console.log('Running in local DEVELOPMENT mode...');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
+    console.log('Running in cloud PRODUCTION mode...');
     const distPath = path.join(process.cwd(), 'dist');
+    
+    // Serve production static assets cleanly
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    
+    // Catch-all handler for Single Page Application routing
+    app.get('*', (req: Request, res: Response, next: any) => {
+      // Don't intercept API endpoints
+      if (req.path.startsWith('/api/')) {
+        return next();
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
