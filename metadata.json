@@ -1,0 +1,6 @@
+{
+  "name": "BankersVault AI",
+  "description": "Comprehensive IBPS PO preparation platform featuring server-side AI-graded essays, dynamic general awareness quizzes based on Google Search, and automatic Google Calendar study planning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
